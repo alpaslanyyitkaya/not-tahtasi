@@ -1,0 +1,434 @@
+<title>Kalem Deneme Tahtası</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-screen drawing board, one wrapping toolbar on top, a folding test panel bottom-left. */
+:root{
+  --bg:#e7ebf0; --panel:#fbfcfd; --fg:#1b2430; --muted:#5a6878; --line:#d3dae3;
+  --accent:#2b62c9; --accent-fg:#ffffff; --good:#1d7f47; --warn:#a85f00; --danger:#c23a3a;
+  --f-ui:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14181e; --panel:#1d232b; --fg:#e6ebf1; --muted:#9aa7b6; --line:#2f3843;
+  --accent:#6c9cf0; --accent-fg:#0d1420; --good:#4fc283; --warn:#e0a048; --danger:#ef7373; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14181e; --panel:#1d232b; --fg:#e6ebf1; --muted:#9aa7b6; --line:#2f3843;
+  --accent:#6c9cf0; --accent-fg:#0d1420; --good:#4fc283; --warn:#e0a048; --danger:#ef7373; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);overflow:hidden;display:flex;flex-direction:column;-webkit-user-select:none;user-select:none}
+.bar{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;background:var(--panel);border-bottom:1px solid var(--line);
+  padding-block:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.grp{display:flex;gap:4px;align-items:center}
+.sep{width:1px;height:28px;background:var(--line)}
+button,.btn{font:500 14px/1 var(--f-ui);color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:8px;
+  height:38px;min-width:38px;padding:0 11px;display:inline-flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
+button:focus-visible,.btn:focus-within,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button:disabled{opacity:.4;cursor:default}
+button.danger-armed{background:var(--danger);border-color:var(--danger);color:#fff}
+.sw{width:30px;height:30px;min-width:30px;padding:0;border-radius:50%;border:2px solid var(--line)}
+.sw[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:2px;background:var(--c)}
+.sw{background:var(--c)}
+input[type=file]{position:absolute;opacity:0;width:1px;height:1px}
+input[type=range]{width:90px;accent-color:var(--accent)}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.chk input{width:18px;height:18px;accent-color:var(--accent)}
+#stage{position:relative;flex:1;min-height:0;touch-action:none;overflow:hidden}
+#stage canvas{position:absolute;inset:0;touch-action:none}
+#live.hl{opacity:.35}
+#diag{position:absolute;left:max(12px,env(safe-area-inset-left,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.12);
+  font-size:13px;max-width:min(330px,calc(100% - 24px));z-index:5}
+#diag summary{cursor:pointer;padding:10px 12px;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:12px}
+#diag summary::-webkit-details-marker{display:none}
+#diag summary span{color:var(--muted);font-weight:400}
+#diag dl{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;margin:0;padding:0 12px 12px}
+#diag dt{color:var(--muted)}
+#diag dd{margin:0;font-family:var(--f-mono);font-size:12.5px;font-variant-numeric:tabular-nums;min-width:0;overflow-wrap:anywhere}
+.ok{color:var(--good)} .no{color:var(--warn)}
+#diag p{margin:0;padding:0 12px 12px;color:var(--muted);font-size:12px;line-height:1.45}
+#zoom{position:absolute;right:max(12px,env(safe-area-inset-right,0px));bottom:max(12px,env(safe-area-inset-bottom,0px));
+  font:500 12px var(--f-mono);color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 8px;z-index:5}
+@media (max-width:560px){input[type=range]{width:70px}.hide-sm{display:none}}
+</style>
+
+<div class="bar" role="toolbar" aria-label="Çizim araçları">
+  <div class="grp">
+    <button id="t-pen" aria-pressed="true" title="Kalem">✎ Kalem</button>
+    <button id="t-hl" aria-pressed="false" title="Fosforlu kalem">Fosforlu</button>
+    <button id="t-er" aria-pressed="false" title="Silgi: dokunduğun çizgiyi siler">Silgi</button>
+    <button id="t-hand" aria-pressed="false" title="El: kaydır">El</button>
+  </div>
+  <div class="sep hide-sm"></div>
+  <div class="grp" id="colors">
+    <button class="sw" style="--c:#1b2430" data-c="#1b2430" aria-pressed="true" aria-label="Siyah"></button>
+    <button class="sw" style="--c:#2b62c9" data-c="#2b62c9" aria-pressed="false" aria-label="Mavi"></button>
+    <button class="sw" style="--c:#d23c3c" data-c="#d23c3c" aria-pressed="false" aria-label="Kırmızı"></button>
+    <button class="sw" style="--c:#f2c200" data-c="#f2c200" aria-pressed="false" aria-label="Sarı"></button>
+    <input id="size" type="range" min="1" max="12" step="0.5" value="3" aria-label="Kalınlık">
+  </div>
+  <div class="sep hide-sm"></div>
+  <div class="grp">
+    <button id="undo" title="Geri al" aria-label="Geri al">↶</button>
+    <button id="redo" title="İleri al" aria-label="İleri al">↷</button>
+    <button id="clear">Temizle</button>
+  </div>
+  <div class="sep hide-sm"></div>
+  <div class="grp">
+    <label class="btn" for="file">Resim yükle<input id="file" type="file" accept="image/*"></label>
+    <button id="fit">Sığdır</button>
+  </div>
+  <div class="grp">
+    <label class="chk"><input id="penOnly" type="checkbox" checked> Sadece kalem çizsin</label>
+    <label class="chk"><input id="predict" type="checkbox" checked> Tahmin</label>
+  </div>
+</div>
+
+<div id="stage">
+  <canvas id="main"></canvas>
+  <canvas id="live"></canvas>
+  <canvas id="pred"></canvas>
+  <details id="diag" open>
+    <summary>Test sonuçları <span id="d-short">kalemle çiz</span></summary>
+    <dl>
+      <dt>Giriş</dt><dd id="d-type">—</dd>
+      <dt>Basınç</dt><dd id="d-pr">—</dd>
+      <dt>Eğim</dt><dd id="d-tilt">—</dd>
+      <dt>Örnekleme</dt><dd id="d-hz">—</dd>
+      <dt>Hızlı çizim</dt><dd id="d-desync">—</dd>
+      <dt>Uç tahmini</dt><dd id="d-predict">—</dd>
+      <dt>Avuç</dt><dd id="d-palm">—</dd>
+    </dl>
+    <p>Kalemi yavaş ve hızlı bastırarak çiz. Çizerken avucunu ekrana koy. İki parmakla kaydır ve yakınlaştır.</p>
+  </details>
+  <div id="zoom">100%</div>
+</div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const stage = $('stage'), cMain = $('main'), cLive = $('live'), cPred = $('pred');
+const opts = { desynchronized: true };
+const xMain = cMain.getContext('2d'), xLive = cLive.getContext('2d', opts), xPred = cPred.getContext('2d', opts);
+const desync = !!(xLive.getContextAttributes && xLive.getContextAttributes().desynchronized);
+
+let W = 0, H = 0, dpr = 1;
+const view = { s: 1, tx: 0, ty: 0 };
+let bg = null, bgW = 1200, bgH = 1600;
+let strokes = [], undoStack = [], redoStack = [];
+let tool = 'pen', color = '#1b2430', size = 3, penOnly = true, predict = true;
+
+// ---------- sample page ----------
+function samplePage() {
+  const c = document.createElement('canvas'); c.width = bgW; c.height = bgH;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fbfbf7'; g.fillRect(0, 0, bgW, bgH);
+  g.strokeStyle = '#c9d6e6'; g.lineWidth = 1.5;
+  for (let y = 180; y < bgH - 60; y += 48) { g.beginPath(); g.moveTo(60, y); g.lineTo(bgW - 60, y); g.stroke(); }
+  g.strokeStyle = '#e7a3a3'; g.beginPath(); g.moveTo(140, 0); g.lineTo(140, bgH); g.stroke();
+  g.fillStyle = '#5a6878'; g.font = '600 38px Inter, system-ui, sans-serif';
+  g.fillText('Örnek sayfa', 170, 110);
+  g.font = '400 24px Inter, system-ui, sans-serif';
+  g.fillText('Üstteki "Resim yükle" ile kendi fotoğrafını açıp üstüne yazabilirsin.', 170, 150);
+  // a small figure to annotate
+  g.strokeStyle = '#8a97a8'; g.lineWidth = 3; g.strokeRect(200, 420, 420, 280);
+  g.beginPath(); g.moveTo(200, 700); g.lineTo(410, 500); g.lineTo(620, 700); g.stroke();
+  g.beginPath(); g.arc(840, 560, 120, 0, Math.PI * 2); g.stroke();
+  g.fillStyle = '#8a97a8'; g.font = '500 22px Inter, system-ui, sans-serif';
+  g.fillText('Şeklin üstüne not al →', 690, 760);
+  return c;
+}
+
+// ---------- sizing & view ----------
+function resize() {
+  const r = stage.getBoundingClientRect();
+  W = r.width; H = r.height; dpr = window.devicePixelRatio || 1;
+  for (const c of [cMain, cLive, cPred]) {
+    c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+    c.style.width = W + 'px'; c.style.height = H + 'px';
+  }
+  redrawMain();
+}
+function fit() {
+  const pad = 24;
+  view.s = Math.min((W - pad * 2) / bgW, (H - pad * 2) / bgH);
+  view.tx = (W - bgW * view.s) / 2; view.ty = (H - bgH * view.s) / 2;
+  redrawMain();
+}
+function applyT(x) { x.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.tx, dpr * view.ty); }
+function clearCtx(x) { x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, x.canvas.width, x.canvas.height); }
+function toWorld(e) {
+  const r = stage.getBoundingClientRect();
+  return { x: (e.clientX - r.left - view.tx) / view.s, y: (e.clientY - r.top - view.ty) / view.s };
+}
+function redrawMain() {
+  clearCtx(xMain);
+  applyT(xMain);
+  xMain.save();
+  xMain.shadowColor = 'rgba(0,0,0,.18)'; xMain.shadowBlur = 18 * view.s; xMain.shadowOffsetY = 4 * view.s;
+  xMain.fillStyle = '#ffffff'; xMain.fillRect(0, 0, bgW, bgH);
+  xMain.restore();
+  if (bg) xMain.drawImage(bg, 0, 0, bgW, bgH);
+  for (const s of strokes) drawStroke(xMain, s);
+  $('zoom').textContent = Math.round(view.s * 100) + '%';
+}
+
+// ---------- stroke rendering ----------
+const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+const penW = (s, p) => s.size * (0.3 + 1.4 * p);
+function penSeg(x, s, i) {
+  const P = s.pts;
+  if (i === 0) {
+    x.fillStyle = s.color; x.beginPath(); x.arc(P[0].x, P[0].y, penW(s, P[0].p) / 2, 0, Math.PI * 2); x.fill(); return;
+  }
+  const a = i >= 2 ? mid(P[i - 2], P[i - 1]) : P[i - 1];
+  const b = mid(P[i - 1], P[i]);
+  x.strokeStyle = s.color; x.lineCap = 'round'; x.lineJoin = 'round';
+  x.lineWidth = penW(s, (P[i - 1].p + P[i].p) / 2);
+  x.beginPath(); x.moveTo(a.x, a.y); x.quadraticCurveTo(P[i - 1].x, P[i - 1].y, b.x, b.y); x.stroke();
+}
+function penTail(x, s) {
+  const P = s.pts, n = P.length; if (n < 2) return;
+  const a = mid(P[n - 2], P[n - 1]);
+  x.strokeStyle = s.color; x.lineCap = 'round'; x.lineWidth = penW(s, P[n - 1].p);
+  x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(P[n - 1].x, P[n - 1].y); x.stroke();
+}
+function hlSeg(x, s, i) {
+  const P = s.pts;
+  x.strokeStyle = s.color; x.lineCap = 'round'; x.lineJoin = 'round'; x.lineWidth = s.size * 5;
+  x.beginPath();
+  if (i === 0) { x.moveTo(P[0].x, P[0].y); x.lineTo(P[0].x + 0.01, P[0].y); }
+  else { x.moveTo(P[i - 1].x, P[i - 1].y); x.lineTo(P[i].x, P[i].y); }
+  x.stroke();
+}
+function drawStroke(x, s) {
+  if (s.tool === 'hl') {
+    x.save(); x.globalAlpha = 0.35;
+    x.strokeStyle = s.color; x.lineCap = 'round'; x.lineJoin = 'round'; x.lineWidth = s.size * 5;
+    x.beginPath(); x.moveTo(s.pts[0].x, s.pts[0].y);
+    if (s.pts.length === 1) x.lineTo(s.pts[0].x + 0.01, s.pts[0].y);
+    for (let i = 1; i < s.pts.length; i++) x.lineTo(s.pts[i].x, s.pts[i].y);
+    x.stroke(); x.restore();
+  } else {
+    for (let i = 0; i < s.pts.length; i++) penSeg(x, s, i);
+    penTail(x, s);
+  }
+}
+
+// ---------- history ----------
+function snapshot() { undoStack.push(strokes.slice()); if (undoStack.length > 100) undoStack.shift(); redoStack = []; syncHist(); }
+function syncHist() { $('undo').disabled = !undoStack.length; $('redo').disabled = !redoStack.length; }
+$('undo').onclick = undo; $('redo').onclick = redo;
+function undo() { if (!undoStack.length) return; redoStack.push(strokes); strokes = undoStack.pop(); redrawMain(); syncHist(); }
+function redo() { if (!redoStack.length) return; undoStack.push(strokes); strokes = redoStack.pop(); redrawMain(); syncHist(); }
+
+// ---------- diagnostics ----------
+const diag = { type: '—', pmin: 1, pmax: 0, pts: 0, t0: 0, t1: 0, palm: 0 };
+$('d-desync').innerHTML = desync ? '<span class="ok">açık</span>' : '<span class="no">desteklenmiyor</span>';
+const predSupported = typeof PointerEvent !== 'undefined' && 'getPredictedEvents' in PointerEvent.prototype;
+$('d-predict').innerHTML = predSupported ? '<span class="ok">destekleniyor</span>' : '<span class="no">desteklenmiyor</span>';
+$('d-palm').textContent = 'henüz test edilmedi';
+const typeName = { pen: 'kalem', touch: 'parmak', mouse: 'fare' };
+function showDiag(e) {
+  $('d-type').textContent = typeName[e.pointerType] || e.pointerType;
+  const p = e.pressure.toFixed(2);
+  if (diag.pmax > diag.pmin + 0.15) {
+    $('d-pr').innerHTML = p + ' <span class="ok">değişiyor (' + diag.pmin.toFixed(2) + '–' + diag.pmax.toFixed(2) + ')</span>';
+  } else {
+    $('d-pr').innerHTML = p + (e.pointerType === 'pen' ? ' <span class="no">sabit gibi</span>' : '');
+  }
+  $('d-tilt').textContent = (e.tiltX || 0) + '° / ' + (e.tiltY || 0) + '°';
+  const dt = diag.t1 - diag.t0;
+  if (dt > 150 && diag.pts > 5) $('d-hz').textContent = '≈' + Math.round(diag.pts / (dt / 1000)) + ' nokta/sn';
+  $('d-short').textContent = typeName[e.pointerType] || e.pointerType;
+}
+
+// ---------- input ----------
+let drawing = null;      // { id, stroke }
+let erasing = null;      // { id, changed }
+let penDown = false;
+const touches = new Map();
+let gesture = null;      // { c, d }
+let mousePan = null;
+
+function pressureOf(e) {
+  if (e.pointerType === 'pen') return e.pressure > 0 ? e.pressure : 0.5;
+  return 0.5;
+}
+function startStroke(e) {
+  if (tool === 'er') { erasing = { id: e.pointerId, changed: false }; eraseAt(toWorld(e)); return; }
+  const w = toWorld(e);
+  const s = { tool: tool === 'hl' ? 'hl' : 'pen', color, size, pts: [{ x: w.x, y: w.y, p: pressureOf(e) }] };
+  drawing = { id: e.pointerId, stroke: s };
+  cLive.classList.toggle('hl', s.tool === 'hl');
+  clearCtx(xLive); applyT(xLive);
+  (s.tool === 'hl' ? hlSeg : penSeg)(xLive, s, 0);
+  diag.pmin = 1; diag.pmax = 0; diag.pts = 0; diag.t0 = e.timeStamp; diag.t1 = e.timeStamp;
+}
+function extendStroke(e) {
+  const s = drawing.stroke;
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  const list = evs.length ? evs : [e];
+  const seg = s.tool === 'hl' ? hlSeg : penSeg;
+  for (const ce of list) {
+    const w = toWorld(ce), p = pressureOf(ce);
+    const last = s.pts[s.pts.length - 1];
+    if (Math.abs(w.x - last.x) + Math.abs(w.y - last.y) < 0.3 / view.s) continue;
+    s.pts.push({ x: w.x, y: w.y, p });
+    seg(xLive, s, s.pts.length - 1);
+    diag.pts++; diag.t1 = ce.timeStamp;
+    if (ce.pointerType === 'pen' && ce.pressure > 0) { diag.pmin = Math.min(diag.pmin, ce.pressure); diag.pmax = Math.max(diag.pmax, ce.pressure); }
+  }
+  clearCtx(xPred);
+  if (predict && predSupported && s.tool === 'pen') {
+    const pe = e.getPredictedEvents();
+    if (pe.length) {
+      applyT(xPred);
+      const last = s.pts[s.pts.length - 1];
+      xPred.strokeStyle = s.color; xPred.lineCap = 'round'; xPred.lineJoin = 'round';
+      xPred.lineWidth = penW(s, last.p);
+      xPred.beginPath(); xPred.moveTo(last.x, last.y);
+      for (const p of pe) { const w = toWorld(p); xPred.lineTo(w.x, w.y); }
+      xPred.stroke();
+    }
+  }
+  showDiag(e);
+}
+function endStroke(commit) {
+  clearCtx(xLive); clearCtx(xPred);
+  if (commit && drawing) {
+    snapshot(); strokes = strokes.concat([drawing.stroke]);
+    applyT(xMain); drawStroke(xMain, drawing.stroke);
+  }
+  drawing = null;
+}
+function eraseAt(w) {
+  const r = 14 / view.s, r2 = r * r;
+  const keep = strokes.filter(s => !s.pts.some(p => (p.x - w.x) ** 2 + (p.y - w.y) ** 2 < r2 + (s.size * 2) ** 2));
+  if (keep.length !== strokes.length) {
+    if (!erasing.changed) { snapshot(); erasing.changed = true; }
+    strokes = keep; redrawMain();
+  }
+}
+function gestureState() {
+  const pts = [...touches.values()];
+  const c = { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length };
+  const d = pts.length > 1 ? Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) : 0;
+  return { c, d, n: pts.length };
+}
+function zoomAt(cx, cy, k) {
+  const ns = Math.min(8, Math.max(0.1, view.s * k)); k = ns / view.s;
+  view.tx = cx - (cx - view.tx) * k; view.ty = cy - (cy - view.ty) * k; view.s = ns;
+}
+function local(e) { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+stage.addEventListener('pointerdown', e => {
+  if (e.target.closest('#diag')) return;
+  if (e.pointerType === 'pen') {
+    penDown = true;
+    touches.clear(); gesture = null;
+    if (drawing && drawing.id !== e.pointerId) endStroke(false);
+    stage.setPointerCapture(e.pointerId);
+    if (tool === 'hand') { mousePan = { id: e.pointerId, ...local(e) }; return; }
+    startStroke(e); showDiag(e); return;
+  }
+  if (e.pointerType === 'touch') {
+    if (penDown) { diag.palm++; $('d-palm').innerHTML = '<span class="ok">' + diag.palm + ' dokunuş yok sayıldı</span>'; return; }
+    touches.set(e.pointerId, local(e));
+    stage.setPointerCapture(e.pointerId);
+    if (!penOnly && touches.size === 1 && tool !== 'hand') { startStroke(e); return; }
+    if (drawing) endStroke(false);
+    erasing = null;
+    gesture = gestureState();
+    return;
+  }
+  // mouse
+  stage.setPointerCapture(e.pointerId);
+  if (tool === 'hand' || e.button === 1 || e.button === 2) { mousePan = { id: e.pointerId, ...local(e) }; return; }
+  if (e.button === 0) { startStroke(e); showDiag(e); }
+});
+stage.addEventListener('pointermove', e => {
+  if (drawing && e.pointerId === drawing.id) { extendStroke(e); return; }
+  if (erasing && e.pointerId === erasing.id) { eraseAt(toWorld(e)); return; }
+  if (mousePan && e.pointerId === mousePan.id) {
+    const p = local(e); view.tx += p.x - mousePan.x; view.ty += p.y - mousePan.y; mousePan.x = p.x; mousePan.y = p.y; redrawMain(); return;
+  }
+  if (touches.has(e.pointerId) && gesture) {
+    touches.set(e.pointerId, local(e));
+    const g = gestureState();
+    if (g.n !== gesture.n) { gesture = g; return; }
+    view.tx += g.c.x - gesture.c.x; view.ty += g.c.y - gesture.c.y;
+    if (g.n > 1 && gesture.d > 0) zoomAt(g.c.x, g.c.y, g.d / gesture.d);
+    gesture = g; redrawMain();
+  }
+});
+function up(e, cancel) {
+  if (e.pointerType === 'pen') penDown = false;
+  if (drawing && e.pointerId === drawing.id) endStroke(!cancel);
+  if (erasing && e.pointerId === erasing.id) erasing = null;
+  if (mousePan && e.pointerId === mousePan.id) mousePan = null;
+  if (touches.delete(e.pointerId)) gesture = touches.size ? gestureState() : null;
+}
+stage.addEventListener('pointerup', e => up(e, false));
+stage.addEventListener('pointercancel', e => up(e, true));
+stage.addEventListener('contextmenu', e => e.preventDefault());
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  const p = local(e);
+  if (e.ctrlKey || Math.abs(e.deltaY) > 0 && !e.shiftKey) zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.0015));
+  redrawMain();
+}, { passive: false });
+
+// ---------- toolbar ----------
+const toolBtns = { pen: $('t-pen'), hl: $('t-hl'), er: $('t-er'), hand: $('t-hand') };
+for (const [k, b] of Object.entries(toolBtns)) b.onclick = () => {
+  tool = k; for (const [k2, b2] of Object.entries(toolBtns)) b2.setAttribute('aria-pressed', k2 === k);
+};
+for (const b of document.querySelectorAll('#colors .sw')) b.onclick = () => {
+  color = b.dataset.c;
+  for (const b2 of document.querySelectorAll('#colors .sw')) b2.setAttribute('aria-pressed', b2 === b);
+  if (tool === 'er' || tool === 'hand') toolBtns.pen.click();
+};
+$('size').oninput = e => size = +e.target.value;
+$('penOnly').onchange = e => penOnly = e.target.checked;
+$('predict').onchange = e => predict = e.target.checked;
+$('fit').onclick = fit;
+let clearTimer = null;
+$('clear').onclick = () => {
+  const b = $('clear');
+  if (!b.classList.contains('danger-armed')) {
+    b.classList.add('danger-armed'); b.textContent = 'Emin misin?';
+    clearTimer = setTimeout(() => { b.classList.remove('danger-armed'); b.textContent = 'Temizle'; }, 3000);
+    return;
+  }
+  clearTimeout(clearTimer); b.classList.remove('danger-armed'); b.textContent = 'Temizle';
+  if (strokes.length) { snapshot(); strokes = []; redrawMain(); }
+};
+$('file').onchange = e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const url = URL.createObjectURL(f);
+  const img = new Image();
+  img.onload = () => {
+    const max = 2600, k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    bg = c; bgW = c.width; bgH = c.height;
+    strokes = []; undoStack = []; redoStack = []; syncHist();
+    fit();
+  };
+  img.src = url; e.target.value = '';
+};
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+});
+
+new ResizeObserver(() => { const first = W === 0; resize(); if (first) fit(); }).observe(stage);
+bg = samplePage();
+syncHist();
+})();
+</script>
