@@ -28,6 +28,7 @@ export const boardScreen = {
       live: null, erasing: null, W: 0, H: 0, dpr: 1, raf: 0, cleanup: [],
     };
     buildDom(root);
+    if (history.state?.screen !== 'board') history.pushState({ screen: 'board' }, '');
     S.input = attachInput(S.dom.stage, handlers, () => ({ tool: S.tool, penOnly: getPenOnly() }));
     resize();   // hemen ölç: ResizeObserver ilk kareyi beklemesin
     await boardHooks.afterLoad?.(S);
@@ -72,6 +73,23 @@ export const boardHooks = {
 
 export function getState() { return S; }
 
+let leaving = false;
+async function leaveBoard() {
+  if (!S || leaving) return;
+  leaving = true;
+  try {
+    if ((await boardHooks.canLeave?.(S)) === false) {
+      history.pushState({ screen: 'board' }, '');   // notta kal: geri adımını geri koy
+      return;
+    }
+    await showScreen('list');
+  } finally {
+    leaving = false;
+  }
+}
+
+window.addEventListener('popstate', () => { if (S) leaveBoard(); });
+
 // ---------- DOM ----------
 function buildDom(root) {
   const stage = el('div', { class: 'stage' });
@@ -101,9 +119,10 @@ function buildDom(root) {
   undoBtn.addEventListener('click', undo);
   redoBtn.addEventListener('click', redo);
   const back = el('button', { class: 'ghost' }, '← Notlarım');
-  back.addEventListener('click', async () => {
-    if (S && (await boardHooks.canLeave?.(S)) === false) return;
-    showScreen('list');
+  // Geri düğmesi ve Android geri hareketi aynı yoldan geçer (history.back → popstate → leaveBoard).
+  back.addEventListener('click', () => {
+    if (history.state?.screen === 'board') history.back();
+    else leaveBoard();
   });
   const title = el('button', { class: 'title-btn', title: 'Yeniden adlandır' }, el('span', {}, S.note.name));
   title.addEventListener('click', rename);

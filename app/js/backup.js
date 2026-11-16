@@ -1,14 +1,17 @@
-// Yedek: tüm notlar, tahtalar ve resimler tek bir JSON dosyasında (resimler base64).
+// Yedek dosyası: satır satır JSON. İlk satır başlık, sonra her not/tahta/resim kendi satırında.
+// Büyük kütüphanelerde bellek taşmasın diye dosya parça parça yazılır ve okunur
+// (hiçbir zaman tüm yedek tek bir metin olarak bellekte durmaz).
 // Geri yükleme önce dosyanın tamamını doğrular; geçersizse hiçbir şey yazılmaz.
 import * as db from './db.js';
 
+const VERSION = 2;
 const NOT_BACKUP = 'Bu dosya bir Not Tahtası yedeği değil';
 const BROKEN = 'Yedek dosyası eksik ya da bozuk';
 
 const pad = (n) => String(n).padStart(2, '0');
 export function backupFileName(now) {
   const d = new Date(now);
-  return `not-tahtasi-yedek-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+  return `not-tahtasi-yedek-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.ntyedek`;
 }
 
 async function blobToBase64(blob) {
@@ -25,45 +28,88 @@ function base64ToBlob(data, type) {
   return new Blob([bytes], { type });
 }
 
-export async function serializeAll(now = Date.now()) {
-  const all = await db.dumpAll();
-  const notes = await Promise.all(all.notes.map(async (n) => ({
-    ...n,
-    thumb: n.thumb ? { type: n.thumb.type, data: await blobToBase64(n.thumb) } : null,
-  })));
-  const blobs = await Promise.all(all.blobs.map(async (b) => ({
-    id: b.id, noteId: b.noteId, type: b.blob.type, data: await blobToBase64(b.blob),
-  })));
-  return JSON.stringify({ app: 'not-tahtasi', version: 1, exportedAt: now, notes, boards: all.boards, blobs });
-}
-
-export function validateBackup(o) {
-  if (!o || typeof o !== 'object' || o.app !== 'not-tahtasi' || o.version !== 1) return { ok: false, reason: NOT_BACKUP };
-  if (![o.notes, o.boards, o.blobs].every(Array.isArray)) return { ok: false, reason: BROKEN };
-  const noteIds = new Set();
-  for (const n of o.notes) {
-    if (typeof n?.id !== 'string' || typeof n.name !== 'string' || typeof n.updatedAt !== 'number') return { ok: false, reason: BROKEN };
-    noteIds.add(n.id);
-  }
-  const blobIds = new Set();
-  for (const b of o.blobs) {
-    if (typeof b?.id !== 'string' || typeof b.data !== 'string') return { ok: false, reason: BROKEN };
-    blobIds.add(b.id);
-  }
-  for (const bd of o.boards) {
-    if (!noteIds.has(bd?.noteId) || !Array.isArray(bd.items)) return { ok: false, reason: BROKEN };
-    for (const it of bd.items) {
-      if (it?.type === 'image' && !blobIds.has(it.blobId)) return { ok: false, reason: BROKEN };
+export async function* readLines(blob) {
+  const reader = blob.stream().pipeThrough(new TextDecoderStream()).getReader();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i);
+      buf = buf.slice(i + 1);
+      if (line) yield line;
     }
   }
-  return { ok: true };
+  if (buf) yield buf;
 }
 
-export function parseBackupText(text) {
-  let o;
-  try { o = JSON.parse(text); } catch { return { ok: false, reason: NOT_BACKUP }; }
-  const v = validateBackup(o);
-  return v.ok ? { ok: true, data: o } : v;
+export async function serializeAll(now = Date.now()) {
+  const all = await db.dumpAll();
+  const line = (o) => JSON.stringify(o) + '\n';
+  const head = [line({ app: 'not-tahtasi', version: VERSION, exportedAt: now })];
+  for (const n of all.notes) {
+    head.push(line({ k: 'note', ...n, thumb: n.thumb ? { type: n.thumb.type, data: await blobToBase64(n.thumb) } : null }));
+  }
+  for (const b of all.boards) head.push(line({ k: 'board', ...b }));
+  let out = new Blob(head);
+  // Resimler tek tek eklenir; her parça Blob'a katıldıktan sonra metin bellekten bırakılır.
+  for (const b of all.blobs) {
+    out = new Blob([out, line({ k: 'blob', id: b.id, noteId: b.noteId, type: b.blob.type, data: await blobToBase64(b.blob) })]);
+  }
+  return new Blob([out], { type: 'application/octet-stream' });
+}
+
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+function validItem(it) {
+  if (it?.type === 'image') return typeof it.blobId === 'string' && [it.x, it.y, it.w, it.h].every(isNum);
+  if (it?.type === 'stroke') return Array.isArray(it.pts) && isNum(it.size) && it.pts.every((p) => isNum(p?.x) && isNum(p?.y));
+  return false;
+}
+
+// 1. geçiş: resim verisini çözmeden tüm dosyayı doğrular; notları ve tahtaları toplar.
+async function scan(file) {
+  const notes = [], boards = [], blobIds = new Set();
+  let first = true;
+  try {
+    for await (const text of readLines(file)) {
+      let o;
+      try { o = JSON.parse(text); } catch { return { ok: false, reason: first ? NOT_BACKUP : BROKEN }; }
+      if (first) {
+        if (o?.app !== 'not-tahtasi' || o.version !== VERSION) return { ok: false, reason: NOT_BACKUP };
+        first = false;
+        continue;
+      }
+      if (o?.k === 'note') {
+        if (typeof o.id !== 'string' || typeof o.name !== 'string' || !isNum(o.updatedAt)) return { ok: false, reason: BROKEN };
+        const { k, ...note } = o;
+        notes.push(note);
+      } else if (o?.k === 'board') {
+        if (typeof o.noteId !== 'string' || !Array.isArray(o.items) || !o.items.every(validItem)) return { ok: false, reason: BROKEN };
+        boards.push({ noteId: o.noteId, items: o.items });
+      } else if (o?.k === 'blob') {
+        if (typeof o.id !== 'string' || typeof o.noteId !== 'string' || typeof o.data !== 'string') return { ok: false, reason: BROKEN };
+        blobIds.add(o.id);
+      } else {
+        return { ok: false, reason: BROKEN };
+      }
+    }
+  } catch {
+    return { ok: false, reason: first ? NOT_BACKUP : BROKEN };
+  }
+  if (first) return { ok: false, reason: NOT_BACKUP };
+  const noteIds = new Set(notes.map((n) => n.id));
+  for (const b of boards) {
+    if (!noteIds.has(b.noteId)) return { ok: false, reason: BROKEN };
+    for (const it of b.items) if (it.type === 'image' && !blobIds.has(it.blobId)) return { ok: false, reason: BROKEN };
+  }
+  return { ok: true, notes, boards };
+}
+
+export async function checkBackup(file) {
+  const r = await scan(file);
+  return r.ok ? { ok: true, noteCount: r.notes.length } : r;
 }
 
 export function planMerge(local, incoming) {
@@ -78,21 +124,24 @@ export function planMerge(local, incoming) {
   return { write, skip, added };
 }
 
-export async function restoreFromText(text) {
-  const parsed = parseBackupText(text);
-  if (!parsed.ok) throw new Error(parsed.reason);
-  const data = parsed.data;
-  let plan, records;
+export async function restoreFromFile(file) {
+  const s = await scan(file);
+  if (!s.ok) throw new Error(s.reason);
+  const plan = planMerge(await db.listNotes(), s.notes);
+  const ids = new Set(plan.write);
+  const records = { notes: [], boards: s.boards.filter((b) => ids.has(b.noteId)), blobs: [] };
   try {
-    plan = planMerge(await db.listNotes(), data.notes);
-    const ids = new Set(plan.write);
-    records = {
-      notes: data.notes.filter((n) => ids.has(n.id)).map((n) => ({
-        ...n, thumb: n.thumb ? base64ToBlob(n.thumb.data, n.thumb.type) : null,
-      })),
-      boards: data.boards.filter((b) => ids.has(b.noteId)),
-      blobs: data.blobs.filter((b) => ids.has(b.noteId)).map((b) => ({ id: b.id, noteId: b.noteId, blob: base64ToBlob(b.data, b.type) })),
-    };
+    for (const n of s.notes) {
+      if (ids.has(n.id)) records.notes.push({ ...n, thumb: n.thumb ? base64ToBlob(n.thumb.data, n.thumb.type) : null });
+    }
+    // 2. geçiş: yalnızca yazılacak notların resimleri, birer birer çözülür.
+    let first = true;
+    for await (const text of readLines(file)) {
+      if (first) { first = false; continue; }
+      if (!text.startsWith('{"k":"blob"')) continue;
+      const o = JSON.parse(text);
+      if (ids.has(o.noteId)) records.blobs.push({ id: o.id, noteId: o.noteId, blob: base64ToBlob(o.data, o.type) });
+    }
   } catch {
     throw new Error(BROKEN);
   }

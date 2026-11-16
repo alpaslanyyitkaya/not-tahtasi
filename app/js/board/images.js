@@ -14,12 +14,27 @@ export function chooseOutputType(mime, hasAlpha) {
   return mime === 'image/png' && hasAlpha ? 'image/png' : 'image/jpeg';
 }
 
+// Ekranda gösterilen bitmap'ler bellek için en fazla 1600 px (kayıtlı dosya 2600 px kalır).
+export const DISPLAY_SIDE = 1600;
+export const displaySize = (w, h) => targetSize(w, h, DISPLAY_SIDE);
+
+// failed: açılamayan dosyalar; storageFull: açıldı ama kaydedilemedi (depolama dolu vb.).
 export async function importMany(files, importer) {
-  const ok = [], failed = [];
+  const ok = [], failed = [], storageFull = [];
   for (const f of files) {
-    try { ok.push(await importer(f)); } catch { failed.push(f.name); }
+    try { ok.push(await importer(f)); } catch (e) {
+      (e?.message === 'decode' ? failed : storageFull).push(f.name);
+    }
   }
-  return { ok, failed };
+  return { ok, failed, storageFull };
+}
+
+async function displayBitmap(source) {
+  const { w, h } = displaySize(source.width, source.height);
+  if (w === source.width && h === source.height) return source;
+  const small = await createImageBitmap(source, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' });
+  source.close?.();
+  return small;
 }
 
 function hasTransparency(bitmap) {
@@ -52,7 +67,7 @@ export async function importImageFile(file, noteId) {
   if (!blob) throw new Error('decode');
   const blobId = newId();
   await db.putBlob({ id: blobId, noteId, blob });
-  const bitmap = await createImageBitmap(c);
+  const bitmap = await displayBitmap(await createImageBitmap(c));
   return { blobId, w, h, bitmap };
 }
 
@@ -62,7 +77,7 @@ export async function loadBitmaps(items, map = new Map()) {
   await Promise.all(need.map(async (it) => {
     try {
       const blob = await db.getBlob(it.blobId);
-      if (blob) map.set(it.blobId, await createImageBitmap(blob));
+      if (blob) map.set(it.blobId, await displayBitmap(await createImageBitmap(blob)));
     } catch { /* yer tutucu çizilir */ }
   }));
   return map;

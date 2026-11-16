@@ -1,6 +1,6 @@
 // Tahtada resimler: ekleme (+Resim), Seç aracıyla seçme, taşıma, boyutlandırma, silme.
 // Resmin üstüne yazılmış (bağlı) çizgiler resimle birlikte taşınır ve silinir.
-import { boardHooks, commit, redraw } from './board-screen.js';
+import { boardHooks, commit, redraw, getState } from './board-screen.js';
 import { importImageFile, importMany, loadBitmaps } from './images.js';
 import { placeImages, hitImage, hitHandle, resizeFromHandle, transformAttached } from './geometry.js';
 import { deleteButtonCenter, HANDLE_PX } from './render.js';
@@ -24,9 +24,10 @@ boardHooks.toolbarExtras.push((S) => {
     input.value = '';
     if (!files.length) return;
     toast(files.length > 1 ? `${files.length} resim ekleniyor…` : 'Resim ekleniyor…', 2000);
-    const { ok, failed } = await importMany(files, (f) => importImageFile(f, S.note.id));
-    if (failed.length) toast(`Bu resim açılamadı: ${failed.join(', ')}`, 6000);
-    if (!ok.length) return;
+    const { ok, failed, storageFull } = await importMany(files, (f) => importImageFile(f, S.note.id));
+    if (storageFull.length) toast('Resim kaydedilemedi — depolama dolu olabilir. Yedek alıp bazı notları silin.', 8000);
+    else if (failed.length) toast(`Bu resim açılamadı: ${failed.join(', ')}`, 6000);
+    if (!ok.length || !getState() || getState() !== S) return;   // bu arada nottan çıkıldıysa ekleme
     for (const r of ok) S.bitmaps.set(r.blobId, r.bitmap);
     const rects = placeImages(ok.map((r) => ({ w: r.w, h: r.h })), S.view, S.W, S.H);
     const added = ok.map((r, i) => ({ id: newId(), type: 'image', blobId: r.blobId, ...rects[i] }));

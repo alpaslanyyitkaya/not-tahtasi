@@ -25,3 +25,20 @@ test('importMany keeps going when one file fails and reports its name', async ()
   assert.deepEqual(r.ok, ['A.JPG', 'C.JPG']);
   assert.deepEqual(r.failed, ['bozuk.heic']);
 });
+
+test('displaySize caps on-screen bitmaps at 1600px on the long side', async () => {
+  const { displaySize } = await import('../app/js/board/images.js');
+  assert.deepEqual(displaySize(2600, 1950), { w: 1600, h: 1200 });
+  assert.deepEqual(displaySize(800, 600), { w: 800, h: 600 });
+});
+
+test('importMany separates storage-full failures from unreadable files', async () => {
+  const files = [{ name: 'a.jpg' }, { name: 'b.jpg' }];
+  const importer = async (f) => {
+    if (f.name === 'b.jpg') { const e = new Error('dolu'); e.name = 'QuotaExceededError'; throw e; }
+    return f.name;
+  };
+  const r = await importMany(files, importer);
+  assert.deepEqual(r.failed, []);
+  assert.deepEqual(r.storageFull, ['b.jpg']);
+});

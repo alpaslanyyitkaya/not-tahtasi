@@ -93,7 +93,9 @@ export function attachInput(stage, h, getOpts) {
 
   function onUp(e, cancel) {
     if (e.pointerType === 'pen') penDown = false;
-    if (mode && e.pointerId === mode.id) endMode(!cancel);
+    // Sistem iptali (ana ekran hareketi, bildirim perdesi): kalemle çizilen yarım çizgi korunur.
+    // Yalnızca parmak çizgisi iptalde atılır (ör. ikinci parmak gelince).
+    if (mode && e.pointerId === mode.id) endMode(!cancel || (mode.kind === 'draw' && mode.by !== 'touch'));
     if (touches.delete(e.pointerId)) gesture = touches.size ? gestureState() : null;
   }
 

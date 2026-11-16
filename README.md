@@ -34,5 +34,5 @@ Yeni bir dosya eklediğinde `ASSETS` listesine de ekle — `npm test` eksik dosy
 
 ## Yedek
 
-Notlar yalnızca tablette durur. Liste ekranı ⋮ → **Tümünü dışa aktar** ile ara sıra yedek al ve dosyayı
+Notlar yalnızca tablette durur. Liste ekranı ⋮ → **Tümünü dışa aktar** ile ara sıra yedek al (`.ntyedek` dosyası) ve dosyayı
 bilgisayarına gönder (ör. Discord). 14 günden eski yedekte liste ekranında hatırlatma çıkar.

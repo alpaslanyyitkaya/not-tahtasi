@@ -24,3 +24,7 @@ test('every cache list entry exists', () => {
   const gone = assets.filter((a) => a !== './' && !existsSync(join(appDir, a)));
   assert.deepEqual(gone, []);
 });
+
+test('install bypasses the HTTP cache so a deploy never mixes old and new files', () => {
+  assert.match(sw, /cache:\s*'reload'/);
+});
