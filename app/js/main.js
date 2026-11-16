@@ -1,41 +1,42 @@
-// Açılış: kalıcı depolama izni, service worker kaydı, ilk ekran.
+// Açılış: veritabanı, kalıcı depolama izni, service worker kaydı, ilk ekran.
 import { registerScreen, showScreen } from './router.js';
-import { readDeviceInfo, renderDeviceInfo, shareTestPng } from './device-info.js';
+import { openDb } from './db.js';
+import { listScreen } from './list/list-screen.js';
+import { toast } from './ui.js';
 
-// Geçici cihaz testi ekranı (Deneme noktası 1). Task 5'te liste ekranı bunun yerini alır.
-registerScreen('device', {
-  async mount(root) {
-    const wrap = document.createElement('div');
-    wrap.className = 'list-screen';
-    wrap.innerHTML = `
-      <div class="list-wrap">
-        <div class="list-head"><h1>Not Tahtası — cihaz testi</h1></div>
-        <div id="info"></div>
-        <div><button class="primary" id="share">Test PNG'sini paylaş</button></div>
-        <p class="footnote" id="msg"></p>
-      </div>`;
-    root.append(wrap);
-    const info = await readDeviceInfo();
-    wrap.querySelector('#info').append(renderDeviceInfo(info));
-    wrap.querySelector('#share').onclick = async () => {
-      const msg = wrap.querySelector('#msg');
-      try {
-        const r = await shareTestPng();
-        msg.textContent = r === 'shared' ? 'Paylaşım menüsü açıldı.' : 'Bu tarayıcı dosya paylaşımını desteklemiyor.';
-      } catch (e) {
-        msg.textContent = e.name === 'AbortError' ? 'Paylaşım iptal edildi.' : 'Paylaşılamadı: ' + e.message;
-      }
-    };
+registerScreen('list', listScreen);
+// Geçici: not ekranı Task 9'da gelir.
+registerScreen('board', {
+  mount(root, id) {
+    const b = document.createElement('button');
+    b.textContent = '← Notlarım (' + id + ')';
+    b.onclick = () => showScreen('list');
+    root.append(b);
   },
   unmount() {},
 });
 
 async function boot() {
   try { await navigator.storage?.persist?.(); } catch { /* desteklenmiyor */ }
-  if ('serviceWorker' in navigator) {
+  // Yerel geliştirmede önbellek eski dosyaları göstermesin: SW yalnızca yayında ya da ?sw=1 ile.
+  const devHost = ['localhost', '127.0.0.1'].includes(location.hostname) && !location.search.includes('sw=1');
+  if (devHost) {
+    for (const r of (await navigator.serviceWorker?.getRegistrations?.()) ?? []) await r.unregister();
+  } else if ('serviceWorker' in navigator) {
     try { await navigator.serviceWorker.register('sw.js'); } catch (e) { console.warn('SW kaydı başarısız', e); }
   }
-  await showScreen('device');
+  try {
+    await openDb();
+  } catch (e) {
+    document.getElementById('app').textContent = 'Notlar açılamadı: ' + e.message;
+    return;
+  }
+  await showScreen('list');
 }
+
+window.addEventListener('unhandledrejection', (e) => {
+  console.error(e.reason);
+  toast('Bir hata oluştu: ' + (e.reason?.message || e.reason), 6000);
+});
 
 boot();
