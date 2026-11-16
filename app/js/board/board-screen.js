@@ -29,7 +29,9 @@ export const boardScreen = {
     };
     buildDom(root);
     S.input = attachInput(S.dom.stage, handlers, () => ({ tool: S.tool, penOnly: getPenOnly() }));
+    resize();   // hemen ölç: ResizeObserver ilk kareyi beklemesin
     await boardHooks.afterLoad?.(S);
+    if (!S) return;
     const ro = new ResizeObserver(() => resize());
     ro.observe(S.dom.stage);
     S.cleanup.push(() => ro.disconnect());

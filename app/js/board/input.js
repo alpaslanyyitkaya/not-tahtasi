@@ -6,6 +6,7 @@
 // getOpts() → { tool: 'select'|'pen'|'hl'|'er', penOnly: boolean }
 export function attachInput(stage, h, getOpts) {
   let penDown = false;
+  const capture = (e) => { try { stage.setPointerCapture(e.pointerId); } catch { /* geçersiz işaretçi */ } };
   let mode = null;          // { kind: 'draw'|'erase'|'select'|'pan', id, by: pointerType, last? }
   const touches = new Map();
   let gesture = null;       // { c, d, n }
@@ -47,14 +48,14 @@ export function attachInput(stage, h, getOpts) {
       penDown = true;
       touches.clear(); gesture = null;
       if (mode && mode.id !== e.pointerId) endMode(mode.kind === 'select' ? false : mode.kind !== 'draw');
-      stage.setPointerCapture?.(e.pointerId);
+      capture(e);
       beginPrimary(e);
       return;
     }
     if (e.pointerType === 'touch') {
       if (penDown) return;                      // avuç koruması
       touches.set(e.pointerId, h.local(e));
-      stage.setPointerCapture?.(e.pointerId);
+      capture(e);
       const { penOnly, tool } = getOpts();
       if (touches.size === 1 && (tool === 'select' || !penOnly)) { beginPrimary(e); return; }
       if (mode && mode.by === 'touch') endMode(false);  // ikinci parmak: yarım çizgi iptal
@@ -62,7 +63,7 @@ export function attachInput(stage, h, getOpts) {
       return;
     }
     // fare
-    stage.setPointerCapture?.(e.pointerId);
+    capture(e);
     if (e.button === 0) beginPrimary(e);
     else mode = { kind: 'pan', id: e.pointerId, by: 'mouse', last: h.local(e) };
   }

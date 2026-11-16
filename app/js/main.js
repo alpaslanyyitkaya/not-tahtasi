@@ -3,6 +3,7 @@ import { registerScreen, showScreen } from './router.js';
 import { openDb } from './db.js';
 import { listScreen } from './list/list-screen.js';
 import { boardScreen } from './board/board-screen.js';
+import './board/image-tools.js';
 import { toast } from './ui.js';
 
 registerScreen('list', listScreen);
