@@ -1,19 +1,45 @@
 // Service worker: uygulamanın tüm dosyalarını önbelleğe alır, internetsiz çalışmayı sağlar.
 // Her yayında VERSION değişir; yeni sürüm kullanıcı "Yeniden başlat" deyince devreye girer.
-const VERSION = 'v1';
+const VERSION = 'v3';
 const CACHE = `not-tahtasi-${VERSION}`;
+// Bu liste uygulamadaki tüm dosyaları içermeli (tests/assets.test.mjs denetler).
 const ASSETS = [
   './',
   'index.html',
   'manifest.webmanifest',
   'css/app.css',
-  'js/main.js',
-  'js/router.js',
-  'js/device-info.js',
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable-512.png',
+  'js/main.js',
+  'js/router.js',
+  'js/ui.js',
+  'js/ids.js',
+  'js/time.js',
+  'js/db.js',
+  'js/settings.js',
+  'js/device-info.js',
+  'js/backup.js',
+  'js/backup-tools.js',
+  'js/list/list-model.js',
+  'js/list/list-screen.js',
+  'js/board/board-screen.js',
+  'js/board/input.js',
+  'js/board/history.js',
+  'js/board/geometry.js',
+  'js/board/render.js',
+  'js/board/images.js',
+  'js/board/image-tools.js',
+  'js/board/save-status.js',
+  'js/board/persistence.js',
+  'js/board/export.js',
+  'js/board/share-tools.js',
 ];
+
+// Yeni sürüm, kullanıcı "Yeniden başlat"a dokununca devreye girer.
+self.addEventListener('message', (event) => {
+  if (event.data === 'skipWaiting') self.skipWaiting();
+});
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)));
