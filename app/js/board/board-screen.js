@@ -63,6 +63,7 @@ export const boardHooks = {
   initialView: null,   // (S) — ilk boyutlandırmada görünümü ayarlar
   afterCommit: null,   // (S) — her değişiklikten sonra
   beforeLeave: null,   // async (S) — ekrandan çıkmadan önce
+  canLeave: null,      // async (S) → bool — geri düğmesi
   selectDown: null,    // (S, world, e) → bool
   selectMove: null,
   selectUp: null,
@@ -99,7 +100,11 @@ function buildDom(root) {
   const redoBtn = el('button', { 'aria-label': 'İleri al', title: 'İleri al' }, '↷');
   undoBtn.addEventListener('click', undo);
   redoBtn.addEventListener('click', redo);
-  const back = el('button', { class: 'ghost', onclick: () => showScreen('list') }, '← Notlarım');
+  const back = el('button', { class: 'ghost' }, '← Notlarım');
+  back.addEventListener('click', async () => {
+    if (S && (await boardHooks.canLeave?.(S)) === false) return;
+    showScreen('list');
+  });
   const title = el('button', { class: 'title-btn', title: 'Yeniden adlandır' }, el('span', {}, S.note.name));
   title.addEventListener('click', rename);
   const saveState = el('span', { class: 'save-state', 'aria-live': 'polite' });
