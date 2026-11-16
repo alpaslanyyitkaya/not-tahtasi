@@ -2,19 +2,11 @@
 import { registerScreen, showScreen } from './router.js';
 import { openDb } from './db.js';
 import { listScreen } from './list/list-screen.js';
+import { boardScreen } from './board/board-screen.js';
 import { toast } from './ui.js';
 
 registerScreen('list', listScreen);
-// Geçici: not ekranı Task 9'da gelir.
-registerScreen('board', {
-  mount(root, id) {
-    const b = document.createElement('button');
-    b.textContent = '← Notlarım (' + id + ')';
-    b.onclick = () => showScreen('list');
-    root.append(b);
-  },
-  unmount() {},
-});
+registerScreen('board', boardScreen);
 
 async function boot() {
   try { await navigator.storage?.persist?.(); } catch { /* desteklenmiyor */ }

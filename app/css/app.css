@@ -34,7 +34,7 @@
     --danger-fg: #1a0b0b;
     --warn-bg: #3a2e12;
     --warn-fg: #f3d58c;
-    --board: #2a313a;
+    --board: #e6e9ee; /* tahta koyu temada da açık kalır: mürekkep renkleri açık zemin için seçildi */
     --shadow: 0 6px 24px rgba(0, 0, 0, .45);
     color-scheme: dark;
   }
