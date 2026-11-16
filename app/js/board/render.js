@@ -1,5 +1,5 @@
 // Canvas çizimi. Çizgi kodu kalem-deneme.html test sayfasından taşındı (davranış aynı).
-import { bboxOf, intersects, toWorld, toScreen } from './geometry.js';
+import { bboxOf, intersects, toWorld, toScreen, centerOf, imageCorners, rotateHandlePos } from './geometry.js';
 
 const HANDLE = 14;        // ekran px
 const DEL_R = 16;         // silme düğmesi yarıçapı, ekran px
@@ -57,8 +57,13 @@ export function clearCtx(x) { x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0
 
 function drawImageItem(x, it, bitmaps) {
   const bm = bitmaps.get(it.blobId);
+  if (it.rot) {
+    const c = centerOf(it);
+    x.save(); x.translate(c.x, c.y); x.rotate(it.rot); x.translate(-c.x, -c.y);
+  }
   if (bm) x.drawImage(bm, it.x, it.y, it.w, it.h);
   else { x.fillStyle = '#d9dee5'; x.fillRect(it.x, it.y, it.w, it.h); }
+  if (it.rot) x.restore();
 }
 
 function drawItems(x, items, bitmaps, visible) {
@@ -71,8 +76,18 @@ function drawItems(x, items, bitmaps, visible) {
 }
 
 export function deleteButtonCenter(view, im) {
-  const c = toScreen(view, im.x + im.w, im.y);
-  return { x: c.x + DEL_R * 0.4, y: c.y - DEL_R * 0.4, r: DEL_R };
+  const ne = imageCorners(im).ne;
+  const c = toScreen(view, ne.x, ne.y);
+  const a = im.rot || 0, d = DEL_R * 0.4;   // köşeden dışarı, resimle birlikte döner
+  return { x: c.x + d * Math.cos(a) + d * Math.sin(a), y: c.y + d * Math.sin(a) - d * Math.cos(a), r: DEL_R };
+}
+
+// Döndürme tutamacı (ekran px): üst kenarın ortasından ROT_GAP px yukarıda.
+export const ROT_GAP = 34;
+export const ROT_R = 13;
+export function rotateHandleCenter(view, im) {
+  const w = rotateHandlePos(im, ROT_GAP / view.s);
+  return { ...toScreen(view, w.x, w.y), r: ROT_R };
 }
 
 export function renderScene(x, { items, view, dpr, W, H, bitmaps, selectedId = null, accent = '#2b62c9' }) {
@@ -86,15 +101,22 @@ export function renderScene(x, { items, view, dpr, W, H, bitmaps, selectedId = n
 
 function drawSelection(x, view, dpr, im, accent) {
   x.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const p = toScreen(view, im.x, im.y);
-  const w = im.w * view.s, h = im.h * view.s;
+  const C = imageCorners(im);
+  const sc = ['nw', 'ne', 'se', 'sw'].map((k) => toScreen(view, C[k].x, C[k].y));
   x.strokeStyle = accent; x.lineWidth = 2; x.setLineDash([6, 4]);
-  x.strokeRect(p.x, p.y, w, h);
+  x.beginPath(); sc.forEach((p, i) => (i ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y))); x.closePath(); x.stroke();
   x.setLineDash([]);
+  // Döndürme tutamacı: üst kenarın ortasına çizgiyle bağlı yuvarlak.
+  const top = toScreen(view, ...Object.values(rotateHandlePos(im, 0)));
+  const rh = rotateHandleCenter(view, im);
+  x.beginPath(); x.moveTo(top.x, top.y); x.lineTo(rh.x, rh.y); x.stroke();
   x.fillStyle = '#ffffff';
-  for (const [cx, cy] of [[p.x, p.y], [p.x + w, p.y], [p.x, p.y + h], [p.x + w, p.y + h]]) {
-    x.fillRect(cx - HANDLE / 2, cy - HANDLE / 2, HANDLE, HANDLE);
-    x.strokeRect(cx - HANDLE / 2, cy - HANDLE / 2, HANDLE, HANDLE);
+  x.beginPath(); x.arc(rh.x, rh.y, rh.r, 0, Math.PI * 2); x.fill(); x.stroke();
+  x.beginPath(); x.arc(rh.x, rh.y, rh.r * 0.5, -Math.PI * 0.9, Math.PI * 0.4); x.stroke();
+  x.fillStyle = '#ffffff';
+  for (const p of sc) {
+    x.fillRect(p.x - HANDLE / 2, p.y - HANDLE / 2, HANDLE, HANDLE);
+    x.strokeRect(p.x - HANDLE / 2, p.y - HANDLE / 2, HANDLE, HANDLE);
   }
   const d = deleteButtonCenter(view, im);
   x.fillStyle = '#c23a3a';

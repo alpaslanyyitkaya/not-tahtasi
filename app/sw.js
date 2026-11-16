@@ -1,6 +1,6 @@
 // Service worker: uygulamanın tüm dosyalarını önbelleğe alır, internetsiz çalışmayı sağlar.
 // Her yayında VERSION değişir; yeni sürüm kullanıcı "Yeniden başlat" deyince devreye girer.
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = `not-tahtasi-${VERSION}`;
 // Bu liste uygulamadaki tüm dosyaları içermeli (tests/assets.test.mjs denetler).
 const ASSETS = [

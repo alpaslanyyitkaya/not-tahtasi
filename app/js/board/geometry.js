@@ -15,8 +15,45 @@ export function zoomAt(v, cx, cy, k) {
 
 export const strokePad = (st) => (st.tool === 'hl' ? st.size * 2.5 : st.size * 0.85);
 
+// --- Resim döndürme: rot radyan cinsinden, resmin merkezi etrafında (yoksa 0). ---
+const SNAP = (3 * Math.PI) / 180;   // dik açılara 3° içinde yapış
+export const centerOf = (im) => ({ x: im.x + im.w / 2, y: im.y + im.h / 2 });
+const rotAround = (c, a, x, y) => {
+  const cs = Math.cos(a), sn = Math.sin(a), dx = x - c.x, dy = y - c.y;
+  return { x: c.x + dx * cs - dy * sn, y: c.y + dx * sn + dy * cs };
+};
+// Dünya noktasını resmin döndürülmemiş çerçevesine çevirir.
+export const toImageFrame = (im, x, y) => (im.rot ? rotAround(centerOf(im), -im.rot, x, y) : { x, y });
+// Döndürülmemiş çerçevedeki noktayı dünyaya çevirir.
+export const fromImageFrame = (im, x, y) => (im.rot ? rotAround(centerOf(im), im.rot, x, y) : { x, y });
+
+export function imageCorners(im) {
+  return {
+    nw: fromImageFrame(im, im.x, im.y), ne: fromImageFrame(im, im.x + im.w, im.y),
+    sw: fromImageFrame(im, im.x, im.y + im.h), se: fromImageFrame(im, im.x + im.w, im.y + im.h),
+  };
+}
+
+// Döndürme tutamacı: üst kenarın ortasından `dist` dünya birimi yukarıda (resimle birlikte döner).
+export const rotateHandlePos = (im, dist) => fromImageFrame(im, im.x + im.w / 2, im.y - dist);
+
+export function rotationFromPointer(im, x, y) {
+  const c = centerOf(im);
+  let a = Math.atan2(y - c.y, x - c.x) + Math.PI / 2;
+  const q = Math.round(a / (Math.PI / 2)) * (Math.PI / 2);
+  if (Math.abs(a - q) < SNAP) a = q;
+  a = Math.atan2(Math.sin(a), Math.cos(a));   // -π..π
+  return Math.abs(a) < 1e-12 ? 0 : a;
+}
+
 export function itemBBox(item) {
-  if (item.type === 'image') return { x: item.x, y: item.y, w: item.w, h: item.h };
+  if (item.type === 'image') {
+    if (!item.rot) return { x: item.x, y: item.y, w: item.w, h: item.h };
+    const cs = Object.values(imageCorners(item));
+    const xs = cs.map((p) => p.x), ys = cs.map((p) => p.y);
+    const x0 = Math.min(...xs), y0 = Math.min(...ys);
+    return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
+  }
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const p of item.pts) {
     if (p.x < x0) x0 = p.x; if (p.x > x1) x1 = p.x;
@@ -46,7 +83,8 @@ export function contentBBox(items) {
 }
 
 export const intersects = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-const inside = (r, x, y) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+const insideRect = (r, x, y) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+const inside = (im, x, y) => { const p = toImageFrame(im, x, y); return insideRect(im, p.x, p.y); };
 
 export function findAttachTarget(stroke, images) {
   const n = stroke.pts.length;
@@ -66,15 +104,15 @@ export function hitImage(images, x, y) {
 }
 
 export function hitHandle(im, x, y, tol) {
-  const corners = { nw: [im.x, im.y], ne: [im.x + im.w, im.y], sw: [im.x, im.y + im.h], se: [im.x + im.w, im.y + im.h] };
-  for (const [name, [cx, cy]] of Object.entries(corners)) {
-    if (Math.abs(x - cx) <= tol && Math.abs(y - cy) <= tol) return name;
+  for (const [name, c] of Object.entries(imageCorners(im))) {
+    if (Math.abs(x - c.x) <= tol && Math.abs(y - c.y) <= tol) return name;
   }
   return null;
 }
 
-export function resizeFromHandle(im, handle, x, y, minSize = 40) {
-  // Karşı köşe sabit kalır; en-boy oranı korunur.
+export function resizeFromHandle(im, handle, wx, wy, minSize = 40) {
+  // Karşı köşe sabit kalır; en-boy oranı korunur. Hesap resmin döndürülmemiş çerçevesinde yapılır.
+  const { x, y } = toImageFrame(im, wx, wy);
   const ax = handle.includes('w') ? im.x + im.w : im.x;
   const ay = handle.includes('n') ? im.y + im.h : im.y;
   const dx = handle.includes('w') ? ax - x : x - ax;
@@ -82,17 +120,28 @@ export function resizeFromHandle(im, handle, x, y, minSize = 40) {
   let k = Math.max(dx / im.w, dy / im.h);
   k = Math.max(k, minSize / Math.min(im.w, im.h));
   const w = im.w * k, h = im.h * k;
-  return { x: handle.includes('w') ? ax - w : ax, y: handle.includes('n') ? ay - h : ay, w, h };
+  const lx = handle.includes('w') ? ax - w : ax, ly = handle.includes('n') ? ay - h : ay;
+  if (!im.rot) return { x: lx, y: ly, w, h };
+  // Yeni merkez döndürülmemiş çerçevede bulundu; dünyaya çevirip dikdörtgeni oradan kur.
+  const c = fromImageFrame(im, lx + w / 2, ly + h / 2);
+  return { x: c.x - w / 2, y: c.y - h / 2, w, h };
 }
 
+// Bağlı çizgileri resmin eski konumundan yenisine taşır: öteleme + ölçek + döndürme (merkez etrafında).
 export function transformAttached(strokes, oldRect, newRect, imageId) {
   const k = newRect.w / oldRect.w;
+  const oc = centerOf(oldRect), nc = centerOf(newRect);
+  const da = (newRect.rot || 0) - (oldRect.rot || 0);
+  const cs = Math.cos(da), sn = Math.sin(da);
   return strokes.map((st) => {
     if (st.attachedTo !== imageId) return st;
     return {
       ...st,
       size: st.size * k,
-      pts: st.pts.map((p) => ({ x: newRect.x + (p.x - oldRect.x) * k, y: newRect.y + (p.y - oldRect.y) * k, p: p.p })),
+      pts: st.pts.map((p) => {
+        const dx = (p.x - oc.x) * k, dy = (p.y - oc.y) * k;
+        return { x: nc.x + dx * cs - dy * sn, y: nc.y + dx * sn + dy * cs, p: p.p };
+      }),
     };
   });
 }

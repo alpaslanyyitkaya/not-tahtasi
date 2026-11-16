@@ -122,3 +122,62 @@ test('exportScale caps the longest side at 4000 including margin', () => {
   near(g.exportScale({ x: 0, y: 0, w: 8000, h: 2000 }), 4000 / 8096);
   assert.equal(g.exportScale({ x: 0, y: 0, w: 500, h: 500 }), 1);
 });
+
+// --- Döndürülmüş resimler (rot: radyan, merkez etrafında) ---
+const Q = Math.PI / 2;
+const rimg = (id, x, y, w, h, rot) => ({ ...img(id, x, y, w, h), rot });
+
+test('itemBBox of a quarter-turned image swaps width and height around its center', () => {
+  const b = g.itemBBox(rimg('a', 0, 0, 200, 100, Q));
+  near(b.x, 50); near(b.y, -50); near(b.w, 100); near(b.h, 200);
+});
+
+test('hitImage respects rotation', () => {
+  const a = rimg('a', 0, 0, 200, 100, Q);   // dünyada x:50..150, y:-50..150
+  assert.equal(g.hitImage([a], 100, -40).id, 'a');
+  assert.equal(g.hitImage([a], 10, 50), null);
+});
+
+test('findAttachTarget uses the rotated area', () => {
+  const pts = [[100, -40], [100, 140], [60, 0]];
+  assert.equal(g.findAttachTarget(stroke(pts), [rimg('a', 0, 0, 200, 100, Q)]), 'a');
+});
+
+test('hitHandle finds rotated corners', () => {
+  const a = rimg('a', 0, 0, 200, 100, Q);
+  // yerel nw köşesi (0,0) çeyrek dönüşle dünyada (150,-50) olur
+  assert.equal(g.hitHandle(a, 150, -50, 5), 'nw');
+  assert.equal(g.hitHandle(a, 0, 0, 5), null);
+});
+
+test('rotateHandlePos sits above the top edge, turning with the image', () => {
+  const p0 = g.rotateHandlePos(img('a', 0, 0, 200, 100), 30);
+  near(p0.x, 100); near(p0.y, -30);
+  const p1 = g.rotateHandlePos(rimg('a', 0, 0, 200, 100, Q), 30);
+  near(p1.x, 100 + 80); near(p1.y, 50);
+});
+
+test('rotationFromPointer: pointer straight above center is 0, to the right is a quarter turn, snaps near right angles', () => {
+  const a = img('a', 0, 0, 200, 100);   // merkez (100,50)
+  near(g.rotationFromPointer(a, 100, -100), 0);
+  near(g.rotationFromPointer(a, 300, 50), Q);
+  near(g.rotationFromPointer(a, 300, 53), Q);                 // 1° sapma -> yapışır
+  assert.ok(Math.abs(g.rotationFromPointer(a, 300, 150) - Q) > 0.1);   // yapışmaz
+});
+
+test('resizeFromHandle on a rotated image keeps the opposite corner fixed in world space', () => {
+  const a = rimg('a', 0, 0, 200, 100, Q);
+  // se köşesini sürükle; karşı köşe nw dünyada (150,-50)'de kalmalı
+  const r = g.resizeFromHandle(a, 'se', 0, 350);
+  const moved = { ...a, ...r };
+  assert.equal(g.hitHandle(moved, 150, -50, 1e-6), 'nw');
+  near(r.w / r.h, 2);
+  assert.ok(r.w > 200);
+});
+
+test('transformAttached rotates attached strokes with the image', () => {
+  const s = { ...stroke([[150, 50]]), attachedTo: 'a' };   // merkezin 50 sağı
+  const [out] = g.transformAttached([s], img('a', 0, 0, 200, 100), rimg('a', 0, 0, 200, 100, Q), 'a');
+  near(out.pts[0].x, 100); near(out.pts[0].y, 100);
+  assert.equal(out.size, 2);
+});

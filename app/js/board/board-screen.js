@@ -144,8 +144,8 @@ function buildDom(root) {
   S.dom = { stage, main, live, pred, zoom, tools, swatches, size, undoBtn, redoBtn, title, saveState, errorBar };
   S.ctx = {
     main: main.getContext('2d'),
-    live: live.getContext('2d', { desynchronized: true }),
-    pred: pred.getContext('2d', { desynchronized: true }),
+    live: live.getContext('2d'),
+    pred: pred.getContext('2d'),
   };
 }
 

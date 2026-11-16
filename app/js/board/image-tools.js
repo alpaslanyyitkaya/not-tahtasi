@@ -1,13 +1,13 @@
-// Tahtada resimler: ekleme (+Resim), Seç aracıyla seçme, taşıma, boyutlandırma, silme.
+// Tahtada resimler: ekleme (+Resim), Seç aracıyla seçme, taşıma, boyutlandırma, döndürme, silme.
 // Resmin üstüne yazılmış (bağlı) çizgiler resimle birlikte taşınır ve silinir.
 import { boardHooks, commit, redraw, getState } from './board-screen.js';
 import { importImageFile, importMany, loadBitmaps } from './images.js';
-import { placeImages, hitImage, hitHandle, resizeFromHandle, transformAttached } from './geometry.js';
-import { deleteButtonCenter, HANDLE_PX } from './render.js';
+import { placeImages, hitImage, hitHandle, resizeFromHandle, transformAttached, rotationFromPointer } from './geometry.js';
+import { deleteButtonCenter, rotateHandleCenter, HANDLE_PX } from './render.js';
 import { newId } from '../ids.js';
 import { el, toast } from '../ui.js';
 
-let drag = null;   // { kind: 'move'|'resize', id, start, orig, handle, base, moved }
+let drag = null;   // { kind: 'move'|'resize'|'rotate', id, start, orig, handle, base, moved }
 
 const images = (S) => S.items.filter((i) => i.type === 'image');
 const strokes = (S) => S.items.filter((i) => i.type === 'stroke');
@@ -54,6 +54,11 @@ boardHooks.selectDown = (S, w, e) => {
       deleteImage(S, sel);
       return true;
     }
+    const rh = rotateHandleCenter(S.view, sel);
+    if (Math.hypot(p.x - rh.x, p.y - rh.y) <= rh.r + 8) {
+      drag = { kind: 'rotate', id: sel.id, start: w, orig: sel, base: S.items, moved: false };
+      return true;
+    }
     const handle = hitHandle(sel, w.x, w.y, (HANDLE_PX * 1.2) / S.view.s);
     if (handle) {
       drag = { kind: 'resize', id: sel.id, start: w, orig: sel, handle, base: S.items, moved: false };
@@ -74,9 +79,11 @@ boardHooks.selectDown = (S, w, e) => {
 boardHooks.selectMove = (S, w) => {
   if (!drag) return;
   const o = drag.orig;
-  const rect = drag.kind === 'move'
-    ? { x: o.x + (w.x - drag.start.x), y: o.y + (w.y - drag.start.y), w: o.w, h: o.h }
-    : resizeFromHandle(o, drag.handle, w.x, w.y);
+  let rect;
+  if (drag.kind === 'move') rect = { x: o.x + (w.x - drag.start.x), y: o.y + (w.y - drag.start.y), w: o.w, h: o.h };
+  else if (drag.kind === 'rotate') rect = { x: o.x, y: o.y, w: o.w, h: o.h, rot: rotationFromPointer(o, w.x, w.y) };
+  else rect = resizeFromHandle(o, drag.handle, w.x, w.y);
+  rect.rot ??= o.rot || 0;
   drag.moved = true;
   const moved = transformAttached(drag.base, o, rect, o.id);
   S.items = moved.map((it) => (it.id === o.id ? { ...it, ...rect } : it));
