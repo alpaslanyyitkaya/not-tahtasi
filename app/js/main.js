@@ -6,6 +6,7 @@ import { boardScreen } from './board/board-screen.js';
 import './board/image-tools.js';
 import './board/persistence.js';
 import './board/share-tools.js';
+import './backup-tools.js';
 import { toast } from './ui.js';
 
 registerScreen('list', listScreen);
