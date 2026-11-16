@@ -26,11 +26,19 @@ export function itemBBox(item) {
   return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + pad * 2, h: y1 - y0 + pad * 2 };
 }
 
+// Öğeler değişmez olduğundan sınır kutusu nesne başına bir kez hesaplanır.
+const bboxCache = new WeakMap();
+export function bboxOf(item) {
+  let b = bboxCache.get(item);
+  if (!b) { b = itemBBox(item); bboxCache.set(item, b); }
+  return b;
+}
+
 export function contentBBox(items) {
   if (!items.length) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const it of items) {
-    const b = it._bbox || itemBBox(it);
+    const b = bboxOf(it);
     x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
     x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
   }
@@ -101,7 +109,7 @@ export function strokesHitByEraser(strokes, x, y, r) {
   const hit = new Set();
   const probe = { x: x - r, y: y - r, w: r * 2, h: r * 2 };
   for (const st of strokes) {
-    const b = st._bbox || itemBBox(st);
+    const b = bboxOf(st);
     if (!intersects(b, probe)) continue;
     const lim = (r + strokePad(st)) ** 2;
     const P = st.pts;
