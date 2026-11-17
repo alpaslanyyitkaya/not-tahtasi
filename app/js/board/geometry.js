@@ -13,7 +13,32 @@ export function zoomAt(v, cx, cy, k) {
   return { s, tx: cx - (cx - v.tx) * r, ty: cy - (cy - v.ty) * r };
 }
 
-export const strokePad = (st) => (st.tool === 'hl' ? st.size * 2.5 : st.size * 0.85);
+export const strokePad = (st) => (st.tool === 'hl' ? st.size * 2.5
+  : st.tool === 'arrow' ? Math.max(st.size * 0.85, arrowLen(st.size))
+  : st.size * 0.85);
+
+// --- Kalem türleri: ok ve düz çizgi ---
+export const arrowLen = (size) => Math.max(12, size * 4.5);
+const ARROW_ANGLE = (28 * Math.PI) / 180;
+
+// Okun ucu: son noktadan, yönü kararlı bulmak için en az ok boyu kadar geriye bakar
+// (kalem kaldırılırken çıkan küçük kancalar yönü bozmasın).
+export function arrowHead(st) {
+  const P = st.pts;
+  if (P.length < 2) return null;
+  const tip = P[P.length - 1];
+  const L = arrowLen(st.size);
+  let back = P[0];
+  for (let i = P.length - 2; i >= 0; i--) {
+    if (Math.hypot(tip.x - P[i].x, tip.y - P[i].y) >= L) { back = P[i]; break; }
+  }
+  const a = Math.atan2(tip.y - back.y, tip.x - back.x);
+  if (back === tip || (tip.x === back.x && tip.y === back.y)) return null;
+  const wing = (s) => ({ x: tip.x - L * Math.cos(a + s * ARROW_ANGLE), y: tip.y - L * Math.sin(a + s * ARROW_ANGLE) });
+  return { tip: { x: tip.x, y: tip.y }, left: wing(-1), right: wing(1) };
+}
+
+export const straightLine = (pts) => (pts.length < 2 ? pts.slice(0, 1) : [pts[0], pts[pts.length - 1]]);
 
 // --- Resim döndürme: rot radyan cinsinden, resmin merkezi etrafında (yoksa 0). ---
 const SNAP = (3 * Math.PI) / 180;   // dik açılara 3° içinde yapış

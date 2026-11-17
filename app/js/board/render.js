@@ -1,22 +1,66 @@
 // Canvas çizimi. Çizgi kodu kalem-deneme.html test sayfasından taşındı (davranış aynı).
-import { bboxOf, intersects, toWorld, toScreen, centerOf, imageCorners, rotateHandlePos } from './geometry.js';
+import { bboxOf, intersects, toWorld, toScreen, centerOf, imageCorners, rotateHandlePos, arrowHead } from './geometry.js';
 
 const HANDLE = 14;        // ekran px
 const DEL_R = 16;         // silme düğmesi yarıçapı, ekran px
 
 const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-export const penW = (s, p) => s.size * (0.3 + 1.4 * p);
+// Kalınlık: 'pen' basınca duyarlı; 'pencil' biraz; tükenmez ('ball'), düz çizgi ve ok sabit.
+export const penW = (s, p) => {
+  if (s.tool === 'pencil') return s.size * (0.55 + 0.7 * p);
+  if (s.tool === 'ball' || s.tool === 'line' || s.tool === 'arrow') return s.size;
+  return s.size * (0.3 + 1.4 * p);
+};
+
+// Kurşun kalem: rengin taneli, yarı saydam bir deseni (renk başına bir kez üretilir).
+const grain = new Map();
+function inkOf(x, s) {
+  if (s.tool !== 'pencil' || typeof document === 'undefined') return s.color;
+  let pat = grain.get(s.color);
+  if (!pat) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 48;
+    const g = c.getContext('2d');
+    g.fillStyle = s.color;
+    for (let i = 0; i < 48 * 48; i++) {
+      g.globalAlpha = 0.25 + Math.random() * 0.6;
+      g.fillRect(i % 48, Math.floor(i / 48), 1, 1);
+    }
+    pat = g.createPattern(c, 'repeat');
+    grain.set(s.color, pat);
+  }
+  return pat;
+}
+
+export function arrowHeadDraw(x, s) {
+  const h = arrowHead(s);
+  if (!h) return;
+  x.fillStyle = s.color; x.strokeStyle = s.color; x.lineJoin = 'round'; x.lineWidth = s.size;
+  x.beginPath(); x.moveTo(h.tip.x, h.tip.y); x.lineTo(h.left.x, h.left.y); x.lineTo(h.right.x, h.right.y); x.closePath();
+  x.fill(); x.stroke();
+}
+
+// Düz çizgi ve ok önizlemesi / çizimi: tüm şekli bir seferde çizer.
+export function shapeDraw(x, s) {
+  const P = s.pts;
+  x.strokeStyle = s.color; x.lineCap = 'round'; x.lineJoin = 'round'; x.lineWidth = s.size;
+  x.beginPath(); x.moveTo(P[0].x, P[0].y);
+  if (P.length === 1) x.lineTo(P[0].x + 0.01, P[0].y);
+  for (let i = 1; i < P.length; i++) x.lineTo(P[i].x, P[i].y);
+  x.stroke();
+  if (s.tool === 'arrow') arrowHeadDraw(x, s);
+}
 
 export function penSeg(x, s, i) {
   const P = s.pts;
   if (i === 0) {
-    x.fillStyle = s.color;
+    x.fillStyle = inkOf(x, s);
     x.beginPath(); x.arc(P[0].x, P[0].y, penW(s, P[0].p) / 2, 0, Math.PI * 2); x.fill();
     return;
   }
   const a = i >= 2 ? mid(P[i - 2], P[i - 1]) : P[i - 1];
   const b = mid(P[i - 1], P[i]);
-  x.strokeStyle = s.color; x.lineCap = 'round'; x.lineJoin = 'round';
+  x.strokeStyle = inkOf(x, s); x.lineCap = 'round'; x.lineJoin = 'round';
   x.lineWidth = penW(s, (P[i - 1].p + P[i].p) / 2);
   x.beginPath(); x.moveTo(a.x, a.y); x.quadraticCurveTo(P[i - 1].x, P[i - 1].y, b.x, b.y); x.stroke();
 }
@@ -25,7 +69,7 @@ export function penTail(x, s) {
   const P = s.pts, n = P.length;
   if (n < 2) return;
   const a = mid(P[n - 2], P[n - 1]);
-  x.strokeStyle = s.color; x.lineCap = 'round'; x.lineWidth = penW(s, P[n - 1].p);
+  x.strokeStyle = inkOf(x, s); x.lineCap = 'round'; x.lineWidth = penW(s, P[n - 1].p);
   x.beginPath(); x.moveTo(a.x, a.y); x.lineTo(P[n - 1].x, P[n - 1].y); x.stroke();
 }
 
@@ -46,9 +90,12 @@ export function drawStroke(x, s) {
     if (s.pts.length === 1) x.lineTo(s.pts[0].x + 0.01, s.pts[0].y);
     for (let i = 1; i < s.pts.length; i++) x.lineTo(s.pts[i].x, s.pts[i].y);
     x.stroke(); x.restore();
+  } else if (s.tool === 'line') {
+    shapeDraw(x, s);
   } else {
     for (let i = 0; i < s.pts.length; i++) penSeg(x, s, i);
     penTail(x, s);
+    if (s.tool === 'arrow') arrowHeadDraw(x, s);
   }
 }
 

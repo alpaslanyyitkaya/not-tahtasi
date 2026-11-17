@@ -196,6 +196,11 @@ input[type="text"], input[type="search"] {
 .title-btn { max-width: 260px; font-weight: 600; border-color: transparent; background: transparent; }
 .title-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .swatch { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; background: var(--c); border: 2px solid var(--line); }
+.swatch.picker { -webkit-appearance: none; appearance: none; cursor: pointer; overflow: hidden;
+  background: conic-gradient(#e33, #fc0, #3c3, #3cf, #36f, #c3f, #e33); }
+.swatch.picker::-webkit-color-swatch-wrapper { padding: 0; }
+.swatch.picker::-webkit-color-swatch { border: none; border-radius: 50%; opacity: 0; }
+.swatch.picker[aria-pressed="true"]::-webkit-color-swatch { opacity: 1; }
 .swatch[aria-pressed="true"] { background: var(--c); border-color: var(--surface); outline: 2px solid var(--accent); outline-offset: 1px; }
 .size { width: 96px; accent-color: var(--accent); }
 .save-state { font-size: 13px; color: var(--muted); min-width: 90px; }

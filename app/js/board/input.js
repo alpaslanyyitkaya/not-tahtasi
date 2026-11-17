@@ -93,9 +93,12 @@ export function attachInput(stage, h, getOpts) {
 
   function onUp(e, cancel) {
     if (e.pointerType === 'pen') penDown = false;
-    // Sistem iptali (ana ekran hareketi, bildirim perdesi): kalemle çizilen yarım çizgi korunur.
+    // Sistem iptali (ana ekran hareketi, bildirim perdesi; bazı Huawei kalemleri kaldırırken de
+    // iptal gönderiyor): kalem çizgisi ve resim taşıma/boyut/döndürme korunur.
     // Yalnızca parmak çizgisi iptalde atılır (ör. ikinci parmak gelince).
-    if (mode && e.pointerId === mode.id) endMode(!cancel || (mode.kind === 'draw' && mode.by !== 'touch'));
+    if (mode && e.pointerId === mode.id) {
+      endMode(!cancel || mode.kind === 'select' || (mode.kind === 'draw' && mode.by !== 'touch'));
+    }
     if (touches.delete(e.pointerId)) gesture = touches.size ? gestureState() : null;
   }
 

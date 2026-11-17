@@ -2,16 +2,21 @@
 import * as db from '../db.js';
 import { newId } from '../ids.js';
 import { showScreen } from '../router.js';
-import { el, toast, promptDialog } from '../ui.js';
-import { getPenOnly } from '../settings.js';
+import { el, toast, promptDialog, openMenu } from '../ui.js';
+import { getPenOnly, getPenType, setPenType } from '../settings.js';
 import { attachInput } from './input.js';
 import { createHistory } from './history.js';
-import { toWorld, zoomAt, findAttachTarget, strokesHitByEraser } from './geometry.js';
-import { penSeg, hlSeg, penW, renderScene, applyView, clearCtx } from './render.js';
+import { toWorld, zoomAt, findAttachTarget, strokesHitByEraser, straightLine } from './geometry.js';
+import { penSeg, hlSeg, penW, renderScene, applyView, clearCtx, shapeDraw, arrowHeadDraw } from './render.js';
 
 const COLORS = [
   ['#1b2430', 'Siyah'], ['#2b62c9', 'Mavi'], ['#d23c3c', 'Kırmızı'], ['#1d7f47', 'Yeşil'], ['#f2c200', 'Sarı'],
 ];
+const PEN_LABELS = { pen: 'Kalem', ball: 'Tükenmez', pencil: 'Kurşun kalem', line: 'Düz çizgi', arrow: 'Ok' };
+const PEN_HINTS = {
+  pen: 'bastırdıkça kalınlaşır', ball: 'hep aynı kalınlıkta', pencil: 'soluk, taneli',
+  line: 'cetvel gibi dümdüz', arrow: 'ucuna ok başı koyar',
+};
 const SIZE_RANGE = { pen: [1, 12, 0.5], hl: [2, 12, 0.5], er: [6, 48, 1] };
 
 let S = null;   // ekran durumu
@@ -23,7 +28,7 @@ export const boardScreen = {
     const board = (await db.getBoard(noteId)) ?? { noteId, items: [] };
     S = {
       note, items: board.items, view: { s: 1, tx: 0, ty: 0 },
-      tool: 'pen', color: COLORS[0][0], sizes: { pen: 3, hl: 4, er: 14 },
+      tool: 'pen', penType: getPenType(), color: COLORS[0][0], sizes: { pen: 3, hl: 4, er: 14 },
       selectedId: null, history: createHistory(100), bitmaps: new Map(),
       live: null, erasing: null, W: 0, H: 0, dpr: 1, raf: 0, cleanup: [],
     };
@@ -104,7 +109,7 @@ function buildDom(root) {
     return b;
   };
   const tools = { select: toolBtn('select', 'Seç', 'Seç: resimleri taşı ve boyutlandır'),
-    pen: toolBtn('pen', 'Kalem', 'Kalem'), hl: toolBtn('hl', 'Fosforlu', 'Fosforlu kalem'),
+    pen: el('button', { 'aria-pressed': 'false', title: 'Kalem — türünü seçmek için tekrar dokun' }, 'Kalem ▾'), hl: toolBtn('hl', 'Fosforlu', 'Fosforlu kalem'),
     er: toolBtn('er', 'Silgi', 'Silgi: dokunduğun çizgiyi siler') };
   const swatches = COLORS.map(([c, name]) => {
     const b = el('button', { class: 'swatch', style: `--c:${c}`, 'aria-label': name, 'aria-pressed': 'false' });
@@ -112,6 +117,17 @@ function buildDom(root) {
     b.dataset.c = c;
     return b;
   });
+  // Kalem düğmesi: kalem seçili değilse seçer, seçiliyse tür menüsünü açar.
+  tools.pen.addEventListener('click', () => {
+    if (S.tool !== 'pen') { setTool('pen'); return; }
+    openMenu(tools.pen, Object.entries(PEN_LABELS).map(([k, label]) => ({
+      label: (k === S.penType ? '✓ ' : ' ') + label + ' — ' + PEN_HINTS[k],
+      onClick: () => { S.penType = k; setPenType(k); syncToolbar(); },
+    })));
+  });
+  // Serbest renk: 5 hazır rengin yanında renk seçici.
+  const picker = el('input', { type: 'color', class: 'swatch picker', 'aria-label': 'Başka renk', title: 'Başka renk seç', value: '#7a3fc4' });
+  picker.addEventListener('input', () => { S.color = picker.value; if (S.tool !== 'pen' && S.tool !== 'hl') setTool('pen'); syncToolbar(); });
   const size = el('input', { type: 'range', class: 'size', 'aria-label': 'Kalınlık', id: 'tool-size' });
   size.addEventListener('input', () => { S.sizes[sizeKey()] = Number(size.value); });
   const undoBtn = el('button', { 'aria-label': 'Geri al', title: 'Geri al' }, '↶');
@@ -133,7 +149,7 @@ function buildDom(root) {
     el('div', { class: 'tsep' }),
     el('div', { class: 'tgroup' }, ...Object.values(tools)),
     el('div', { class: 'tsep' }),
-    el('div', { class: 'tgroup' }, ...swatches, size),
+    el('div', { class: 'tgroup' }, ...swatches, picker, size),
     el('div', { class: 'tsep' }),
     el('div', { class: 'tgroup' }, undoBtn, redoBtn),
     el('div', { class: 'spacer' }),
@@ -141,7 +157,7 @@ function buildDom(root) {
   const errorBar = el('div', { class: 'save-error', hidden: '' });
   root.append(el('div', { class: 'board-screen' }, toolbar, errorBar, stage));
 
-  S.dom = { stage, main, live, pred, zoom, tools, swatches, size, undoBtn, redoBtn, title, saveState, errorBar };
+  S.dom = { stage, main, live, pred, zoom, tools, swatches, picker, size, undoBtn, redoBtn, title, saveState, errorBar };
   S.ctx = {
     main: main.getContext('2d'),
     live: live.getContext('2d'),
@@ -161,7 +177,12 @@ function setTool(t) {
 export function syncToolbar() {
   const d = S.dom;
   for (const [k, b] of Object.entries(d.tools)) b.setAttribute('aria-pressed', String(k === S.tool));
-  for (const b of d.swatches) b.setAttribute('aria-pressed', String(b.dataset.c === S.color && (S.tool === 'pen' || S.tool === 'hl')));
+  const inking = S.tool === 'pen' || S.tool === 'hl';
+  for (const b of d.swatches) b.setAttribute('aria-pressed', String(b.dataset.c === S.color && inking));
+  const custom = !COLORS.some(([c]) => c === S.color);
+  d.picker.setAttribute('aria-pressed', String(custom && inking));
+  if (custom) d.picker.value = S.color;
+  d.tools.pen.textContent = (S.tool === 'pen' ? PEN_LABELS[S.penType] : 'Kalem') + ' ▾';
   const [min, max, step] = SIZE_RANGE[sizeKey()];
   d.size.min = min; d.size.max = max; d.size.step = step; d.size.value = S.sizes[sizeKey()];
   d.size.disabled = S.tool === 'select';
@@ -240,12 +261,14 @@ const handlers = {
   local,
   strokeStart(e) {
     const w = world(e);
-    const st = { id: newId(), type: 'stroke', tool: S.tool, color: S.color, size: S.sizes[S.tool],
+    const tool = S.tool === 'pen' ? S.penType : S.tool;
+    const st = { id: newId(), type: 'stroke', tool, color: S.color, size: S.sizes[S.tool],
       pts: [{ x: w.x, y: w.y, p: pressureOf(e) }], attachedTo: null };
     S.live = st;
     S.dom.live.classList.toggle('hl', st.tool === 'hl');
     clearCtx(S.ctx.live); applyView(S.ctx.live, S.view, S.dpr);
-    (st.tool === 'hl' ? hlSeg : penSeg)(S.ctx.live, st, 0);
+    if (st.tool === 'line') shapeDraw(S.ctx.live, st);
+    else (st.tool === 'hl' ? hlSeg : penSeg)(S.ctx.live, st, 0);
   },
   strokeMove(e) {
     const st = S.live;
@@ -257,11 +280,17 @@ const handlers = {
       const last = st.pts[st.pts.length - 1];
       if (Math.abs(w.x - last.x) + Math.abs(w.y - last.y) < 0.3 / S.view.s) continue;
       st.pts.push({ x: w.x, y: w.y, p: pressureOf(ce) });
-      seg(S.ctx.live, st, st.pts.length - 1);
+      if (st.tool !== 'line') seg(S.ctx.live, st, st.pts.length - 1);
+    }
+    if (st.tool === 'line') {
+      clearCtx(S.ctx.live); applyView(S.ctx.live, S.view, S.dpr);
+      shapeDraw(S.ctx.live, { ...st, pts: straightLine(st.pts) });
+      return;
     }
     const px = S.ctx.pred;
     clearCtx(px);
-    if (st.tool === 'pen' && e.getPredictedEvents) {
+    if (st.tool === 'arrow') { applyView(px, S.view, S.dpr); arrowHeadDraw(px, st); }
+    else if ((st.tool === 'pen' || st.tool === 'ball') && e.getPredictedEvents) {
       const pe = e.getPredictedEvents();
       if (pe.length) {
         applyView(px, S.view, S.dpr);
@@ -278,6 +307,7 @@ const handlers = {
     S.live = null;
     clearCtx(S.ctx.live); clearCtx(S.ctx.pred);
     if (!ok || !st) return;
+    if (st.tool === 'line') st.pts = straightLine(st.pts);
     const images = S.items.filter((i) => i.type === 'image');
     commit([...S.items, { ...st, attachedTo: findAttachTarget(st, images) }]);
   },

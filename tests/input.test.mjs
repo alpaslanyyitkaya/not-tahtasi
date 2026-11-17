@@ -20,7 +20,7 @@ function setup(opts = { tool: 'pen', penOnly: true }) {
     strokeMove: () => calls.push('move'),
     strokeEnd: (ok) => calls.push(ok ? 'end:commit' : 'end:discard'),
     eraseStart() {}, eraseAt() {}, eraseEnd() {},
-    selectDown: () => false, selectMove() {}, selectUp() {},
+    selectDown: () => true, selectMove: () => calls.push('smove'), selectUp: (ok) => calls.push(ok ? 'sup:commit' : 'sup:revert'),
     pan() {}, pinch() {},
   };
   attachInput(stage, h, () => opts);
@@ -48,4 +48,20 @@ test('touches are ignored while the pen is down (palm)', () => {
   pe(stage, 'pointerdown', { pointerType: 'touch', pointerId: 7 });
   pe(stage, 'pointerup', { pointerType: 'pen', pointerId: 1 });
   assert.deepEqual(calls, ['start', 'end:commit']);
+});
+
+test('an image move ended by a system cancel (pen) is kept, not reverted', () => {
+  const { stage, calls } = setup({ tool: 'select', penOnly: true });
+  pe(stage, 'pointerdown', { pointerType: 'pen', pointerId: 1 });
+  pe(stage, 'pointermove', { pointerType: 'pen', pointerId: 1 });
+  pe(stage, 'pointercancel', { pointerType: 'pen', pointerId: 1 });
+  assert.equal(calls.at(-1), 'sup:commit');
+});
+
+test('an image move ended by a system cancel (finger) is kept', () => {
+  const { stage, calls } = setup({ tool: 'select', penOnly: true });
+  pe(stage, 'pointerdown', { pointerType: 'touch', pointerId: 4 });
+  pe(stage, 'pointermove', { pointerType: 'touch', pointerId: 4 });
+  pe(stage, 'pointercancel', { pointerType: 'touch', pointerId: 4 });
+  assert.equal(calls.at(-1), 'sup:commit');
 });
