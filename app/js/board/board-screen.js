@@ -35,6 +35,7 @@ export const boardScreen = {
     buildDom(root);
     if (history.state?.screen !== 'board') history.pushState({ screen: 'board' }, '');
     S.input = attachInput(S.dom.stage, handlers, () => ({ tool: S.tool, penOnly: getPenOnly() }));
+    S.dom.stage.addEventListener('pointerdown', debugSelect, true);   // GEÇİCİ TEŞHİS
     resize();   // hemen ölç: ResizeObserver ilk kareyi beklemesin
     await boardHooks.afterLoad?.(S);
     if (!S) return;
@@ -330,9 +331,31 @@ const handlers = {
     S.items = er.before;
     commit(after);
   },
-  selectDown(e) { return boardHooks.selectDown ? boardHooks.selectDown(S, world(e), e) : false; },
+  selectDown(e) {
+    const r = boardHooks.selectDown ? boardHooks.selectDown(S, world(e), e) : false;
+    S.dbg = r ? 'resim bulundu' : 'resim yok';
+    return r;
+  },
   selectMove(e) { boardHooks.selectMove?.(S, world(e), e); },
   selectUp(ok) { boardHooks.selectUp?.(S, ok); },
   pan(dx, dy) { S.view = { ...S.view, tx: S.view.tx + dx, ty: S.view.ty + dy }; redraw(); },
   pinch(cx, cy, k) { S.view = zoomAt(S.view, cx, cy, k); redraw(); },
 };
+
+// GEÇİCİ TEŞHİS (tablette resim seçilemiyor): Seç aracında her dokunuşu ekranda özetler.
+function debugSelect(e) {
+  if (!S || S.tool !== 'select') return;
+  S.dbg = null;
+  setTimeout(() => {
+    if (!S) return;
+    const p = local(e);
+    const w = toWorld(S.view, p.x, p.y);
+    const r = S.dom.stage.getBoundingClientRect();
+    const ims = S.items.filter((i) => i.type === 'image')
+      .map((i) => Math.round(i.x) + ',' + Math.round(i.y) + ' ' + Math.round(i.w) + 'x' + Math.round(i.h));
+    toast('[teşhis] ' + e.pointerType + ' | ' + (S.dbg ?? 'seçim çağrılmadı')
+      + ' | nokta ' + Math.round(w.x) + ',' + Math.round(w.y)
+      + ' | resimler: ' + (ims.join(' ; ') || 'yok')
+      + ' | tahta ' + Math.round(r.left) + ',' + Math.round(r.top) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height), 20000);
+  }, 0);
+}
